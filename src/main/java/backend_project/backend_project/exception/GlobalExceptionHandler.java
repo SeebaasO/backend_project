@@ -1,5 +1,6 @@
 package backend_project.backend_project.exception;
 
+import backend_project.backend_project.model.Response.ApiResponse;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -9,50 +10,47 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 public class GlobalExceptionHandler  {
 
     @ExceptionHandler(NotFoundException.class)
-    public ResponseEntity<ErrorResponse> handleException(NotFoundException notFoundException) {
-        ErrorResponse errorResponse = new ErrorResponse(
-                notFoundException.getMessage(),
-                HttpStatus.NOT_FOUND.value());
-        return new ResponseEntity<>(errorResponse, HttpStatus.NOT_FOUND);
+    public ResponseEntity<ApiResponse<ErrorResponse>> handleException(NotFoundException notFoundException) {
+        return build(notFoundException.getMessage(), HttpStatus.NOT_FOUND);
     }
 
     @ExceptionHandler(BadRequestException.class)
-    public ResponseEntity<ErrorResponse> handleException(BadRequestException badRequestException) {
-        ErrorResponse errorResponse = new ErrorResponse(
-                badRequestException.getMessage(),
-                HttpStatus.BAD_REQUEST.value());
-        return new ResponseEntity<>(errorResponse, HttpStatus.BAD_REQUEST);
+    public ResponseEntity<ApiResponse<ErrorResponse>> handleException(BadRequestException badRequestException) {
+        return build(badRequestException.getMessage(), HttpStatus.BAD_REQUEST);
     }
 
     @ExceptionHandler(InternalServerErrorException.class)
-    public ResponseEntity<ErrorResponse> handleException(InternalServerErrorException internalServerErrorException) {
-        ErrorResponse errorResponse = new ErrorResponse(
-                internalServerErrorException.getMessage(),
-                HttpStatus.INTERNAL_SERVER_ERROR.value());
-        return new ResponseEntity<>(errorResponse, HttpStatus.INTERNAL_SERVER_ERROR);
+    public ResponseEntity<ApiResponse<ErrorResponse>> handleException(InternalServerErrorException internalServerErrorException) {
+        return build(internalServerErrorException.getMessage(), HttpStatus.INTERNAL_SERVER_ERROR);
     }
 
     @ExceptionHandler(JwtAuthenticationException.class)
-    public ResponseEntity<ErrorResponse> handleException(JwtAuthenticationException jwtAuthenticationException) {
-        ErrorResponse errorResponse = new ErrorResponse(
-                jwtAuthenticationException.getMessage(),
-                HttpStatus.UNAUTHORIZED.value());
-        return new ResponseEntity<>(errorResponse, HttpStatus.UNAUTHORIZED);
+    public ResponseEntity<ApiResponse<ErrorResponse>> handleException(JwtAuthenticationException jwtAuthenticationException) {
+        return build(jwtAuthenticationException.getMessage(), HttpStatus.UNAUTHORIZED);
     }
 
     @ExceptionHandler(ForbiddenException.class)
-    public ResponseEntity<ErrorResponse> handleException(ForbiddenException forbiddenException) {
-        ErrorResponse errorResponse = new ErrorResponse(
-                forbiddenException.getMessage(),
-                HttpStatus.FORBIDDEN.value());
-        return new ResponseEntity<>(errorResponse, HttpStatus.FORBIDDEN);
+    public ResponseEntity<ApiResponse<ErrorResponse>> handleException(ForbiddenException forbiddenException) {
+        return build(forbiddenException.getMessage(), HttpStatus.FORBIDDEN);
     }
 
     @ExceptionHandler(NoContentException.class)
-    public ResponseEntity<ErrorResponse> handleException(NoContentException noContentException) {
-        ErrorResponse errorResponse = new ErrorResponse(
-                noContentException.getMessage(),
-                HttpStatus.NO_CONTENT.value());
-        return new ResponseEntity<>(errorResponse, HttpStatus.NO_CONTENT);
+    public ResponseEntity<ApiResponse<ErrorResponse>> handleException(NoContentException noContentException) {
+        return build(noContentException.getMessage(), HttpStatus.NO_CONTENT);
+    }
+
+    private ResponseEntity<ApiResponse<ErrorResponse>> build(String message, HttpStatus httpStatus) {
+
+        ErrorResponse errorResponse = ErrorResponse.builder()
+                .message(message)
+                .statusCode(httpStatus.value())
+                .build();
+
+        ApiResponse<ErrorResponse> apiResponse = ApiResponse.<ErrorResponse>builder()
+                .result(false)
+                .data(errorResponse)
+                .build();
+
+        return new ResponseEntity<>(apiResponse, httpStatus);
     }
 }

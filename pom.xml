@@ -29,7 +29,7 @@
 	<properties>
 		<java.version>25</java.version>
 		<sonar.host.url>http://localhost:9000</sonar.host.url>
-		<sonar.projectKey>com.aprendiz:demo-springboot</sonar.projectKey>
+		<sonar.projectKey>squ_82fbd79bc05a1a8768f11f33ed771af14425891b</sonar.projectKey>
 	</properties>
 	<dependencies>
 		<dependency>
@@ -110,6 +110,12 @@
 			<version>0.12.6</version>
 			<scope>runtime</scope>
 		</dependency>
+		<dependency>
+			<groupId>org.sonarsource.scanner.maven</groupId>
+			<artifactId>sonar-maven-plugin</artifactId>
+			<version>5.8.0.7211</version>
+			<scope>compile</scope>
+		</dependency>
 	</dependencies>
 
 	<build>
@@ -157,7 +163,22 @@
 			<plugin>
 				<groupId>org.sonarsource.scanner.maven</groupId>
 				<artifactId>sonar-maven-plugin</artifactId>
-				<version>3.11.0.3922</version>
+				<version>5.5.0.6356</version>
+			</plugin>
+			<plugin>
+				<groupId>org.jacoco</groupId>
+				<artifactId>jacoco-maven-plugin</artifactId>
+				<version>0.8.12</version>
+				<executions>
+					<execution>
+						<goals><goal>prepare-agent</goal></goals>
+					</execution>
+					<execution>
+						<id>report</id>
+						<phase>test</phase>
+						<goals><goal>report</goal></goals>
+					</execution>
+				</executions>
 			</plugin>
 		</plugins>
 	</build>
