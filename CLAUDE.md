@@ -2,6 +2,17 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Objetivo del proyecto
+
+Backend de una plataforma de **renta de carros**. Una sola agencia: todos los vehiculos pertenecen a la misma, no se modela agencia ni sede.
+
+Casos de uso:
+
+- **Publico (sin token):** listar los vehiculos disponibles y ver el detalle de un vehiculo.
+- **Autenticado (con token):** separar/reservar un vehiculo. Requiere `Authorization` y `jwtService.validateAccessToken(authHeader)` como primera linea del service.
+
+Consecuencia practica: los endpoints de consulta de vehiculos **no** reciben `authHeader`; los de reserva si. Si un endpoint de reserva no valida el token, queda publico (ver seccion de Seguridad).
+
 ## Comandos
 
 ```bash
@@ -68,6 +79,41 @@ try {
 Consecuencia a tener presente: una excepcion de dominio lanzada **dentro** del try (`BadRequestException`, `ForbiddenException`, `NotFoundException`, `NoContentException`, `JwtAuthenticationException`) la atrapa ese catch y sale al cliente como **500** con el mensaje original, no con su codigo propio. Los codigos 400/403/404/204/401 del `GlobalExceptionHandler` solo aplican a excepciones lanzadas fuera de un try de service.
 
 Es el patron elegido: no lo cambies, no introduzcas una clase base comun ni multicatch a menos que se pida explicitamente.
+
+### Formato de respuesta: envoltorio `ApiResponse<T>` (todas las respuestas)
+
+Todo endpoint devuelve el mismo sobre, `model/Response/ApiResponse.java`:
+
+```java
+@Data @Getter @Setter @Builder @NoArgsConstructor @AllArgsConstructor
+public class ApiResponse<T> {
+    private Boolean result;
+    private T data;
+}
+```
+
+```json
+{ "result": true, "data": { } }
+```
+
+- `result`: `true` en exito, `false` en error.
+- `data`: el contenido, segun el caso de uso:
+
+| Caso | Tipo en el controller | `data` |
+|---|---|---|
+| Crear (`POST`) | `ApiResponse<CreateXResponse>` | el id generado en BD: `{"id": 7}` |
+| Consultar uno (`GET /{id}`) | `ApiResponse<XResponse>` | el objeto, ej. el carro |
+| Consultar todos (`GET /all`) | `ApiResponse<List<XResponse>>` | array con todos los objetos |
+| Error (cualquier codigo) | `ApiResponse<ErrorResponse>` | `{"message": "...", "statusCode": 404}`, con `result: false` |
+
+Quien envuelve es el **controller**, no el service: los services siguen devolviendo el Response plano (`CarResponse`, `List<CarResponse>`, `CreateCarResponse`). El `GlobalExceptionHandler` envuelve los errores con `result: false`.
+
+```java
+return ResponseEntity.ok(ApiResponse.<CarResponse>builder()
+        .result(true)
+        .data(carService.getCarById(id))
+        .build());
+```
 
 ## Como implementar un feature nuevo (ejemplo completo: `Product`)
 
@@ -140,6 +186,8 @@ public interface ProductRepository extends JpaRepository<Product, Integer> {
 
 Request: validacion con `jakarta.validation.constraints` (`@NotBlank`, `@NotNull`, `@Positive`). Response: **nunca** devuelvas la entity; expon solo los campos publicos (fijate que `UserResponse` omite `id` y `password`).
 
+La creacion (`POST`) devuelve solo el id generado en base de datos, en un DTO propio (`CreateProductResponse { Integer id; }`, igual que `CreateCarResponse`). El `ProductResponse` de abajo es para las consultas (`GET`).
+
 ```java
 // model/Request/CreateProductRequest.java
 package backend_project.backend_project.model.Request;
@@ -187,19 +235,20 @@ public class ProductResponse {
 
 ### 4. Interfaz de service - `service/ProductService.java`
 
-Contrato sin anotaciones. Firma tipica: `authHeader` como primer parametro en todo metodo protegido, Request como segundo, retorno siempre un Response o `List<Response>` (nunca la entity).
+Contrato sin anotaciones. Firma tipica: `authHeader` como primer parametro en todo metodo protegido, Request como segundo. Retorno: `CreateXResponse` (solo el id) en los metodos de creacion; un Response o `List<Response>` en los de consulta. Nunca la entity, y nunca el `ApiResponse`: de eso se encarga el controller.
 
 ```java
 package backend_project.backend_project.service;
 
 import backend_project.backend_project.model.Request.CreateProductRequest;
+import backend_project.backend_project.model.Response.CreateProductResponse;
 import backend_project.backend_project.model.Response.ProductResponse;
 
 import java.util.List;
 
 public interface ProductService {
 
-    ProductResponse createProduct(String authHeader, CreateProductRequest createProductRequest);
+    CreateProductResponse createProduct(String authHeader, CreateProductRequest createProductRequest);
 
     List<ProductResponse> getMyProducts(String authHeader);
 }
@@ -207,7 +256,7 @@ public interface ProductService {
 
 ### 5. Implementacion - `service/impl/ProductServiceImpl.java`
 
-`@Service @RequiredArgsConstructor`, dependencias `private final` inyectadas por constructor. Estructura del metodo: `try` -> validar token -> cargar datos -> aplicar reglas (lanzando excepciones de dominio) -> persistir -> mapear a Response con el builder, y cerrar con `catch (Exception e) -> InternalServerErrorException`.
+`@Service @RequiredArgsConstructor`, dependencias `private final` inyectadas por constructor. Estructura del metodo: `try` -> validar token -> cargar datos -> aplicar reglas (lanzando excepciones de dominio) -> persistir -> mapear a Response con el builder (en creacion, `CreateXResponse` con el id), y cerrar con `catch (Exception e) -> InternalServerErrorException`.
 
 ```java
 package backend_project.backend_project.service.impl;
@@ -216,6 +265,7 @@ import backend_project.backend_project.entity.Product;
 import backend_project.backend_project.exception.*;
 import backend_project.backend_project.model.JwtValidate;
 import backend_project.backend_project.model.Request.CreateProductRequest;
+import backend_project.backend_project.model.Response.CreateProductResponse;
 import backend_project.backend_project.model.Response.ProductResponse;
 import backend_project.backend_project.repository.ProductRepository;
 import backend_project.backend_project.service.JwtService;
@@ -233,7 +283,7 @@ public class ProductServiceImpl implements ProductService {
     private final JwtService jwtService;
 
     @Override
-    public ProductResponse createProduct(String authHeader, CreateProductRequest createProductRequest) {
+    public CreateProductResponse createProduct(String authHeader, CreateProductRequest createProductRequest) {
 
         try {
             JwtValidate jwtValidate = jwtService.validateAccessToken(authHeader);
@@ -248,12 +298,10 @@ public class ProductServiceImpl implements ProductService {
                     .ownerId(jwtValidate.getId())
                     .build();
 
-            productRepository.save(product);
+            Product saved = productRepository.save(product);
 
-            return ProductResponse.builder()
-                    .code(product.getCode())
-                    .name(product.getName())
-                    .price(product.getPrice())
+            return CreateProductResponse.builder()
+                    .id(saved.getId())
                     .build();
         } catch (Exception e) {
             throw new InternalServerErrorException(e.getMessage());
@@ -288,12 +336,14 @@ public class ProductServiceImpl implements ProductService {
 
 ### 6. Controller - `controller/ProductController.java`
 
-`@RestController @AllArgsConstructor @RequestMapping("/api/<recurso>")`, depende de la **interfaz** del service. Cada metodo: una linea que delega y envuelve en `ResponseEntity.ok(...)`. Cero logica, cero try/catch (de eso se encarga `GlobalExceptionHandler`).
+`@RestController @AllArgsConstructor @RequestMapping("/api/<recurso>")`, depende de la **interfaz** del service. Cada metodo delega en el service y envuelve el resultado en `ApiResponse` + `ResponseEntity.ok(...)`. Cero logica, cero try/catch (de eso se encarga `GlobalExceptionHandler`).
 
 ```java
 package backend_project.backend_project.controller;
 
 import backend_project.backend_project.model.Request.CreateProductRequest;
+import backend_project.backend_project.model.Response.ApiResponse;
+import backend_project.backend_project.model.Response.CreateProductResponse;
 import backend_project.backend_project.model.Response.ProductResponse;
 import backend_project.backend_project.service.ProductService;
 import jakarta.validation.Valid;
@@ -311,18 +361,24 @@ public class ProductController {
     private final ProductService productService;
 
     @PostMapping
-    public ResponseEntity<ProductResponse> createProduct(
+    public ResponseEntity<ApiResponse<CreateProductResponse>> createProduct(
             @RequestHeader(value = "Authorization") String authHeader,
             @Valid @RequestBody CreateProductRequest createProductRequest) {
 
-        return ResponseEntity.ok(productService.createProduct(authHeader, createProductRequest));
+        return ResponseEntity.ok(ApiResponse.<CreateProductResponse>builder()
+                .result(true)
+                .data(productService.createProduct(authHeader, createProductRequest))
+                .build());
     }
 
     @GetMapping("/mine")
-    public ResponseEntity<List<ProductResponse>> getMyProducts(
+    public ResponseEntity<ApiResponse<List<ProductResponse>>> getMyProducts(
             @RequestHeader(value = "Authorization") String authHeader) {
 
-        return ResponseEntity.ok(productService.getMyProducts(authHeader));
+        return ResponseEntity.ok(ApiResponse.<List<ProductResponse>>builder()
+                .result(true)
+                .data(productService.getMyProducts(authHeader))
+                .build());
     }
 }
 ```
@@ -355,7 +411,13 @@ public ResponseEntity<ErrorResponse> handleException(ConflictException conflictE
 }
 ```
 
-El body de error siempre es `ErrorResponse { message, statusCode }`.
+El body de error siempre es el mismo sobre, con `result: false` y el `ErrorResponse` dentro de `data`:
+
+```json
+{ "result": false, "data": { "message": "Carro no encontrado", "statusCode": 404 } }
+```
+
+El `GlobalExceptionHandler` lo arma en su metodo privado `build(message, httpStatus)`; un handler nuevo solo tiene que llamarlo.
 
 ## Convenciones
 
@@ -363,4 +425,10 @@ El body de error siempre es `ErrorResponse { message, statusCode }`.
 - Lombok en todo: `@Data @Builder @Getter @Setter @AllArgsConstructor @NoArgsConstructor` en entities y DTOs; `@RequiredArgsConstructor` en services; `@AllArgsConstructor` en controllers. Nada de `@Autowired` en campos.
 - Construccion de objetos siempre con `.builder()`.
 - Mensajes de error de cara al usuario en espanol.
+- **Toda respuesta va envuelta en `ApiResponse<T>`**: `{ "result": ..., "data": ... }`. Envuelve el controller; el service devuelve el Response plano.
+- **Los `POST` de creacion devuelven el id generado en base de datos**, no el recurso completo: el service retorna `CreateXResponse { Integer id; }` (`repository.save(entity).getId()`) y el controller `ResponseEntity<ApiResponse<CreateXResponse>>`. Unica excepcion: `/api/auth/register` y `/api/auth/login`, que devuelven `LoginResponse` con el token dentro de `data`.
 - Sin migraciones: el esquema lo genera Hibernate desde las entities (`ddl-auto=update`). Un cambio de entity cambia la tabla al arrancar.
+
+## Reglas de trabajo
+
+- **No ejecutar comandos git.** Nada de `git add`, `git commit`, `git push`, `git checkout`, ramas ni tags. Los cambios se dejan en el working tree; el commit lo hace el usuario.

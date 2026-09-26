@@ -2,6 +2,7 @@ package backend_project.backend_project.controller;
 
 import backend_project.backend_project.model.Request.LoginResquest;
 import backend_project.backend_project.model.Request.UserRegisterRequest;
+import backend_project.backend_project.model.Response.ApiResponse;
 import backend_project.backend_project.model.Response.LoginResponse;
 import backend_project.backend_project.service.AuthService;
 import lombok.AllArgsConstructor;
@@ -17,15 +18,21 @@ public class AuthController {
     private final AuthService userService;
 
     @PostMapping("register")
-    public ResponseEntity<LoginResponse> register(@Validated @RequestBody UserRegisterRequest userRegisterRequest) {
+    public ResponseEntity<ApiResponse<LoginResponse>> register(@Validated @RequestBody UserRegisterRequest userRegisterRequest) {
 
-        return ResponseEntity.ok(userService.registerUser(userRegisterRequest));
+        return ResponseEntity.ok(ApiResponse.<LoginResponse>builder()
+                .result(true)
+                .data(userService.registerUser(userRegisterRequest))
+                .build());
     }
 
     @PostMapping("login")
-    public ResponseEntity<LoginResponse> login(@Validated @RequestBody LoginResquest loginResquest) {
+    public ResponseEntity<ApiResponse<LoginResponse>> login(@Validated @RequestBody LoginResquest loginResquest) {
 
-        return ResponseEntity.ok(userService.login(loginResquest));
+        return ResponseEntity.ok(ApiResponse.<LoginResponse>builder()
+                .result(true)
+                .data(userService.login(loginResquest))
+                .build());
     }
 
 }
